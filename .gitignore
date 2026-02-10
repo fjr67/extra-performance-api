@@ -50,3 +50,4 @@ __queuestorage__
 __azurite_db*__.json
 
 docs/
+.github/copilot-instructions.md
