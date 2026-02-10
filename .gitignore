@@ -48,3 +48,8 @@ __pycache__/
 __blobstorage__
 __queuestorage__
 __azurite_db*__.json
+
+# Copilot instructions (local AI guidance, not for repo)
+.github/copilot-instructions.md
+
+docs/
