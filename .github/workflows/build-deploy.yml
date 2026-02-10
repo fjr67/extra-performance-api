@@ -3,7 +3,7 @@ name: Deploy to Azure Functions
 on:
   push:
     branches:
-      - main
+      - master
       - dev
 
 env:
@@ -40,7 +40,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/master'
 
     steps:
       - name: Download artifact
