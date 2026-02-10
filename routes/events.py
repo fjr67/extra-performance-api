@@ -4,7 +4,7 @@ import json
 
 bp = func.Blueprint()
 
-@bp.route(route="events", methods=["GET"])
+@bp.route(route="events", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def get_events(req: func.HttpRequest) -> func.HttpResponse:
     db = get_db()
     events = list(db.Events.find({}, {"_id": 0}))

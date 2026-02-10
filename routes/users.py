@@ -10,7 +10,7 @@ import base64
 bp = func.Blueprint()
 
 
-@bp.route(route="register", methods=["POST"])
+@bp.route(route="register", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def registerAccount(req: func.HttpRequest) -> func.HttpResponse:
     #checking for valid JSON body in request
     try:
@@ -98,7 +98,7 @@ def registerAccount(req: func.HttpRequest) -> func.HttpResponse:
     )
 
 
-@bp.route(route="login", methods=["POST"])
+@bp.route(route="login", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def login(req: func.HttpRequest) -> func.HttpResponse:
     # extract basic auth from Authorization header
     auth_header = req.headers.get("Authorization")
@@ -166,7 +166,7 @@ def login(req: func.HttpRequest) -> func.HttpResponse:
     )
 
 
-@bp.route(route="logout", methods=["POST"])
+@bp.route(route="logout", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def logout(req: func.HttpRequest) -> func.HttpResponse:
     # extract token from header
     token = req.headers.get("x-access-token")
