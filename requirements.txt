@@ -4,3 +4,5 @@
 
 azure-functions
 pymongo[srv]
+bcrypt
+PyJWT
