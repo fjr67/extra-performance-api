@@ -205,3 +205,6 @@ def logout(req: func.HttpRequest) -> func.HttpResponse:
         mimetype="application/json",
         status_code=200
     )
+
+
+# trigger workflow
