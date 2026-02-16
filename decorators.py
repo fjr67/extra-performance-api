@@ -11,11 +11,9 @@ blacklist = db.blacklist
 def jwt_required(route_function):
     #decorator to check if JWT is valid and not blacklisted
     @wraps(route_function)
-    def jwt_required_wrapper(req: func.HttpRequest) -> func.HttpResponse:
+    def jwt_required_wrapper(req: func.HttpRequest, *args, **kwargs) -> func.HttpResponse:
         #extract token from header
-        token = None
-        if 'x-access-token' in req.headers:
-            token = req.headers.get('x-access-token')
+        token = req.headers.get('x-access-token')
         if not token:
             return func.HttpResponse(
                 json.dumps({'error': 'Token is missing'}),
@@ -33,7 +31,7 @@ def jwt_required(route_function):
             )
 
         try:
-            data = jwt.decode(token, secret_key, algorithms=["HS256"])
+            jwt.decode(token, secret_key, algorithms=["HS256"])
         except jwt.ExpiredSignatureError:
             return func.HttpResponse(
                 json.dumps({'error': 'Token has expired'}),
@@ -57,5 +55,5 @@ def jwt_required(route_function):
             )
 
         # token is valid, call the original function
-        return route_function(req)
+        return route_function(req, *args, **kwargs)
     return jwt_required_wrapper

@@ -1,3 +1,4 @@
+import os
 import azure.functions as func
 from db.mongo import get_db
 import json
@@ -5,6 +6,7 @@ from decorators import jwt_required
 from bson import ObjectId
 from bson.errors import InvalidId
 from datetime import datetime
+import jwt
 
 bp = func.Blueprint()
 
@@ -27,6 +29,15 @@ def checkDatetime(value):
         return datetime.fromisoformat(value)
     except ValueError:
         return False
+    
+#helper to decode JWT token
+def decodeToken(token):
+    decoded = jwt.decode(
+        token,
+        os.environ.get("JWT_SECRET_KEY"),
+        algorithms=["HS256"]
+    )
+    return decoded.get("userId")
 
 @bp.route(route="events", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 #endpoint to test initial setup of MongoDB and deploy to azure. NOT USED IN PROD
@@ -41,7 +52,7 @@ def get_events(req: func.HttpRequest) -> func.HttpResponse:
     )
 
 
-@bp.route(route="userEvents", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="v1.0/userEvents", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def get_user_events(req: func.HttpRequest) -> func.HttpResponse:
     #connecting to MongoDB
     db = get_db()
@@ -69,6 +80,8 @@ def get_user_events(req: func.HttpRequest) -> func.HttpResponse:
         event['_id'] = str(event['_id'])
         event['userId'] = str(event['userId'])
         event['workoutLogId'] = str(event['workoutLogId'])
+        event['start'] = str(event['start'])
+        event['end'] = str(event['end'])
 
     return func.HttpResponse(
         body=json.dumps(events),
@@ -78,11 +91,13 @@ def get_user_events(req: func.HttpRequest) -> func.HttpResponse:
 
 
 
-@bp.route(route="createEvent", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="v1.0/createEvent", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@jwt_required
 def create_event(req: func.HttpRequest) -> func.HttpResponse:
     #connecting to MongoDB
     db = get_db()
     users = db.users
+    events = db.Events
     
     #checking for valid JSON body in request
     try:
@@ -94,8 +109,22 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
+    if not isinstance(data, dict):
+        return func.HttpResponse(
+            json.dumps({"error": "Request body must be a valid JSON object"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    if not data:
+        return func.HttpResponse(
+            json.dumps({"error": "Request body cannot be empty"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
     #checking required fields are present
-    required = ["userId", "eventType", "title", "start", "end"]
+    required = {"userId", "eventType", "title", "start", "end"}
     missing = [field for field in required if field not in data]
     if missing:
         return func.HttpResponse(
@@ -189,7 +218,7 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
     }
 
     #inserting new event in MongoDB
-    result = db.Events.insert_one(new_event)
+    result = events.insert_one(new_event)
 
     #create link for new created event?
     #response with newly created event ID
@@ -197,4 +226,150 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"message": "Event created", "id": str(result.inserted_id)}),
             mimetype="application/json",
             status_code=201
+        )
+
+
+@bp.route(route="v1.0/editEvent/{id}", methods=["PATCH"], auth_level=func.AuthLevel.ANONYMOUS)
+@jwt_required
+def edit_event(req: func.HttpRequest) -> func.HttpResponse:
+    #connecting to MongoDB
+    db = get_db()
+    users = db.users
+    events = db.Events
+
+    #checking for id and making sure it is valid
+    id = req.route_params.get("id")
+    if not id:
+        return func.HttpResponse(
+            json.dumps({"error": "eventId missing"}),
+            mimetype="application/json",
+            status_code=400
+        )
+
+    try:
+        eventId = ObjectId(id)
+    except (InvalidId, TypeError):
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid eventId"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    #checking for valid JSON body in request
+    try:
+        data = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "Request body must be valid JSON"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    if not isinstance(data, dict):
+        return func.HttpResponse(
+            json.dumps({"error": "Request body must be a valid JSON object"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    if not data:
+        return func.HttpResponse(
+            json.dumps({"error": "Request body cannot be empty"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    #check the user logged in with JWT is the user which owns the event
+    try:
+        user_id = ObjectId(decodeToken(req.headers.get("x-access-token")))
+    except (InvalidId, TypeError):
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid userId in token"}),
+            mimetype="application/json",
+            status_code=401
+        )
+    existingEvent = events.find_one({'_id':eventId, 'userId':user_id})
+    if not existingEvent:
+        return func.HttpResponse(
+            json.dumps({"error": "Forbidden or event not found"}),
+            mimetype="application/json",
+            status_code=403
+        )
+
+    
+    allowedFields = {'eventType', 'title', 'description', 'start', 'end', 'location', 'workoutLogId'}
+
+    invalidFields = [field for field in data if field not in allowedFields]
+    if invalidFields:
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid fields submitted", "invalid": invalidFields}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    requiredStringFields = {'eventType', 'title'}
+    dateFields = {'start', 'end'}
+    optionalFields = {'description', 'location'}
+
+    edited_event = {}
+    errors = {}
+
+    for field, value in data.items():
+        if field in requiredStringFields:
+            if checkString(value):
+                edited_event[field] = value.strip()
+            else:
+                errors[field] = "Invalid string"
+        elif field in dateFields:
+            edited_event[field] = checkDatetime(value)
+            if not edited_event[field]:
+                errors[field] = "Invalid date"
+        elif field in optionalFields:
+            if checkString(value):
+                edited_event[field] = value.strip()
+            elif value is None:
+                edited_event[field] = None
+            else:
+                errors[field] = "Invalid string"
+        elif field == 'workoutLogId':
+            if value is None:
+                edited_event['workoutLogId'] = None
+            else:
+                errors['workoutLogId'] = "workoutLogId cannot be edited, can only be set to null"
+
+    if errors:
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid fields submitted", "invalid": errors}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    if not edited_event:
+        return func.HttpResponse(
+            json.dumps({"error": "No fields to be edited"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    result = events.update_one(
+        {"_id": eventId, "userId": user_id},
+        {"$set": edited_event}
+    )
+
+    if result.modified_count == 0:
+        return func.HttpResponse(
+            status_code=204
+        )
+    
+    if result.matched_count == 1:
+        return func.HttpResponse(
+            json.dumps({"success": "event updated successfully"}),
+            mimetype="application/json",
+            status_code=200
+        )
+    else:
+        return func.HttpResponse(
+            json.dumps({"error": "Forbidden or event not found"}),
+            mimetype="application/json",
+            status_code=403
         )
