@@ -1,4 +1,4 @@
-import os
+import os, logging
 import azure.functions as func
 from db.mongo import get_db
 import json
@@ -54,6 +54,8 @@ def get_events(req: func.HttpRequest) -> func.HttpResponse:
 
 @bp.route(route="v1.0/userEvents", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def get_user_events(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("userEvents called")
+
     #connecting to MongoDB
     db = get_db()
 
@@ -94,6 +96,8 @@ def get_user_events(req: func.HttpRequest) -> func.HttpResponse:
 @bp.route(route="v1.0/createEvent", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 @jwt_required
 def create_event(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("createEvent called")
+
     #connecting to MongoDB
     db = get_db()
     users = db.users
@@ -124,7 +128,7 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
         )
     
     #checking required fields are present
-    required = {"userId", "eventType", "title", "start", "end"}
+    required = {"eventType", "title", "start", "end"}
     missing = [field for field in required if field not in data]
     if missing:
         return func.HttpResponse(
@@ -133,14 +137,14 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
+    #getting userId from token
+    userId = decodeToken(req.headers.get("x-access-token"))
+    
     #validating required fields
     invalid_fields = []
-    if checkString(data["userId"]):
-        try:
-            event_userId = ObjectId(data["userId"].strip())
-        except (InvalidId, TypeError, AttributeError):
-            invalid_fields.append("userId")
-    else:
+    try:
+        event_userId = ObjectId(userId)
+    except (InvalidId, TypeError, AttributeError):
         invalid_fields.append("userId")
     if checkString(data["title"]):
         event_title = data["title"].strip()
@@ -202,7 +206,7 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             json.dumps({"error": "userId does not exist"}),
             mimetype="application/json",
-            status_code=409
+            status_code=403
         )
     
     #creating new event object
@@ -232,9 +236,10 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
 @bp.route(route="v1.0/editEvent/{id}", methods=["PATCH"], auth_level=func.AuthLevel.ANONYMOUS)
 @jwt_required
 def edit_event(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("editEvent called")
+
     #connecting to MongoDB
     db = get_db()
-    users = db.users
     events = db.Events
 
     #checking for id and making sure it is valid
@@ -279,7 +284,7 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
-    #check the user logged in with JWT is the user which owns the event
+    #retieve userId from JWT
     try:
         user_id = ObjectId(decodeToken(req.headers.get("x-access-token")))
     except (InvalidId, TypeError):
@@ -288,15 +293,7 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
             status_code=401
         )
-    existingEvent = events.find_one({'_id':eventId, 'userId':user_id})
-    if not existingEvent:
-        return func.HttpResponse(
-            json.dumps({"error": "Forbidden or event not found"}),
-            mimetype="application/json",
-            status_code=403
-        )
 
-    
     allowedFields = {'eventType', 'title', 'description', 'start', 'end', 'location', 'workoutLogId'}
 
     invalidFields = [field for field in data if field not in allowedFields]
@@ -366,6 +363,57 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"success": "event updated successfully"}),
             mimetype="application/json",
             status_code=200
+        )
+    else:
+        return func.HttpResponse(
+            json.dumps({"error": "Forbidden or event not found"}),
+            mimetype="application/json",
+            status_code=403
+        )
+    
+
+@bp.route(route="v1.0/deleteEvent/{id}", methods=["DELETE"], auth_level=func.AuthLevel.ANONYMOUS)
+@jwt_required
+def delete_event(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("deleteEvent called")
+
+    #connecting to MongoDB
+    db = get_db()
+    events = db.Events
+
+    #checking for id and making sure it is valid
+    id = req.route_params.get("id")
+    if not id:
+        return func.HttpResponse(
+            json.dumps({"error": "eventId missing"}),
+            mimetype="application/json",
+            status_code=400
+        )
+
+    try:
+        eventId = ObjectId(id)
+    except (InvalidId, TypeError):
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid eventId"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    #obtain userId from JWT
+    try:
+        user_id = ObjectId(decodeToken(req.headers.get("x-access-token")))
+    except (InvalidId, TypeError):
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid userId in token"}),
+            mimetype="application/json",
+            status_code=401
+        )
+
+    result = events.delete_one({"_id": eventId, "userId": user_id})
+
+    if result.deleted_count == 1:
+        return func.HttpResponse(
+            status_code=204
         )
     else:
         return func.HttpResponse(

@@ -3,7 +3,7 @@ from db.mongo import get_db
 import json
 import bcrypt
 import jwt
-import os
+import os, logging
 import datetime
 import base64
 
@@ -12,6 +12,8 @@ bp = func.Blueprint()
 
 @bp.route(route="v1.0/register", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def registerAccount(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("register called")
+
     #checking for valid JSON body in request
     try:
         data = req.get_json()
@@ -100,6 +102,8 @@ def registerAccount(req: func.HttpRequest) -> func.HttpResponse:
 
 @bp.route(route="v1.0/login", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def login(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("login called")
+
     # extract basic auth from Authorization header
     auth_header = req.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Basic "):
@@ -169,6 +173,8 @@ def login(req: func.HttpRequest) -> func.HttpResponse:
 
 @bp.route(route="v1.0/logout", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def logout(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("logout called")
+
     # extract token from header
     token = req.headers.get("x-access-token")
     if not token:
