@@ -24,6 +24,7 @@ def checkDatetime(value):
     if not checkString(value):
         return False
     
+    #making datetime valid for python
     try:
         value = value.replace("Z", "+00:00")
         return datetime.fromisoformat(value)
@@ -59,9 +60,9 @@ def get_user_events(req: func.HttpRequest) -> func.HttpResponse:
     #connecting to MongoDB
     db = get_db()
 
-    #checking for valid userId
+    #getting userId from token and validating
     try:
-        user_id = ObjectId(req.params.get("userId"))
+        user_id = ObjectId(decodeToken(req.headers.get("x-access-token")))
     except InvalidId:
         return func.HttpResponse(
             json.dumps({'error': 'userId is invalid'}),
@@ -75,16 +76,59 @@ def get_user_events(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
             status_code=400
         )
+    
+    #getting from and to parameters from request
+    fromParam = req.params.get("from")
+    toParam = req.params.get("to")
 
-    events = list(db.Events.find({'userId': user_id}))
+    #checking parameters are present
+    if not fromParam or not toParam:
+        return func.HttpResponse(
+            json.dumps({'error': "'from' and 'to' are required parameters"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    #checking parameters are valid
+    invalid_fields = []
+    from_dt = checkDatetime(fromParam)
+    if not from_dt:
+        invalid_fields.append('from')
+    to_dt = checkDatetime(toParam)
+    if not to_dt:
+        invalid_fields.append('to')
+    
+    if invalid_fields:
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid data", "invalid": invalid_fields}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    if to_dt <= from_dt:
+        return func.HttpResponse(
+            json.dumps({"error": "'to' must be after 'from'"}),
+            mimetype="application/json",
+            status_code=400
+        )
 
+    #querying db for user events
+    events = list(db.Events.find({
+        'userId': user_id,
+        "start": {"$lt": to_dt},
+        "end": {"$gt": from_dt} 
+        }).sort("start", 1))
+
+    #converting non-string values to string for output
     for event in events:
         event['_id'] = str(event['_id'])
         event['userId'] = str(event['userId'])
-        event['workoutLogId'] = str(event['workoutLogId'])
+        if event['workoutLogId']:
+            event['workoutLogId'] = str(event['workoutLogId'])
         event['start'] = str(event['start'])
         event['end'] = str(event['end'])
 
+    #returning list of events
     return func.HttpResponse(
         body=json.dumps(events),
         mimetype="application/json",
@@ -296,6 +340,7 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
 
     allowedFields = {'eventType', 'title', 'description', 'start', 'end', 'location', 'workoutLogId'}
 
+    #checking for invalid fields in JSON
     invalidFields = [field for field in data if field not in allowedFields]
     if invalidFields:
         return func.HttpResponse(
@@ -304,6 +349,7 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
+    #categorising fields so appropriate validation can be applied
     requiredStringFields = {'eventType', 'title'}
     dateFields = {'start', 'end'}
     optionalFields = {'description', 'location'}
@@ -334,6 +380,7 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
             else:
                 errors['workoutLogId'] = "workoutLogId cannot be edited, can only be set to null"
 
+    #returning 400 with errors if any are present
     if errors:
         return func.HttpResponse(
             json.dumps({"error": "Invalid fields submitted", "invalid": errors}),
@@ -348,6 +395,7 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
+    #updating mongoDB document with updated fields
     result = events.update_one(
         {"_id": eventId, "userId": user_id},
         {"$set": edited_event}
@@ -409,6 +457,7 @@ def delete_event(req: func.HttpRequest) -> func.HttpResponse:
             status_code=401
         )
 
+    #deleting specified document from mongoDB
     result = events.delete_one({"_id": eventId, "userId": user_id})
 
     if result.deleted_count == 1:
