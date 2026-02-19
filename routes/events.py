@@ -53,7 +53,8 @@ def get_events(req: func.HttpRequest) -> func.HttpResponse:
     )
 
 
-@bp.route(route="v1.0/userEvents", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="v1.0/userEvents", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+@jwt_required
 def get_user_events(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("userEvents called")
 
@@ -61,13 +62,15 @@ def get_user_events(req: func.HttpRequest) -> func.HttpResponse:
     db = get_db()
 
     #getting userId from token and validating
+    token = getattr(req, "jwt_token", None)
+
     try:
-        user_id = ObjectId(decodeToken(req.headers.get("x-access-token")))
-    except InvalidId:
+        user_id = ObjectId(decodeToken(token))
+    except (InvalidId, TypeError):
         return func.HttpResponse(
-            json.dumps({'error': 'userId is invalid'}),
+            json.dumps({"error": "Invalid userId in token"}),
             mimetype="application/json",
-            status_code=400
+            status_code=401
         )
 
     if not user_id:
@@ -137,7 +140,7 @@ def get_user_events(req: func.HttpRequest) -> func.HttpResponse:
 
 
 
-@bp.route(route="v1.0/createEvent", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="v1.0/createEvent", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 @jwt_required
 def create_event(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("createEvent called")
@@ -182,12 +185,21 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
         )
     
     #getting userId from token
-    userId = decodeToken(req.headers.get("x-access-token"))
+    token = getattr(req, "jwt_token", None)
+
+    try:
+        user_id = ObjectId(decodeToken(token))
+    except (InvalidId, TypeError):
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid userId in token"}),
+            mimetype="application/json",
+            status_code=401
+        )
     
     #validating required fields
     invalid_fields = []
     try:
-        event_userId = ObjectId(userId)
+        event_userId = ObjectId(user_id)
     except (InvalidId, TypeError, AttributeError):
         invalid_fields.append("userId")
     if checkString(data["title"]):
@@ -277,7 +289,7 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 
-@bp.route(route="v1.0/editEvent/{id}", methods=["PATCH"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="v1.0/editEvent/{id}", methods=["PATCH", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 @jwt_required
 def edit_event(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("editEvent called")
@@ -329,8 +341,10 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
         )
     
     #retieve userId from JWT
+    token = getattr(req, "jwt_token", None)
+
     try:
-        user_id = ObjectId(decodeToken(req.headers.get("x-access-token")))
+        user_id = ObjectId(decodeToken(token))
     except (InvalidId, TypeError):
         return func.HttpResponse(
             json.dumps({"error": "Invalid userId in token"}),
@@ -420,7 +434,7 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
         )
     
 
-@bp.route(route="v1.0/deleteEvent/{id}", methods=["DELETE"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="v1.0/deleteEvent/{id}", methods=["DELETE", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 @jwt_required
 def delete_event(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("deleteEvent called")
@@ -447,9 +461,12 @@ def delete_event(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
+    #get token from request, set by decorator
+    token = getattr(req, "jwt_token", None)
+
     #obtain userId from JWT
     try:
-        user_id = ObjectId(decodeToken(req.headers.get("x-access-token")))
+        user_id = ObjectId(decodeToken(token))
     except (InvalidId, TypeError):
         return func.HttpResponse(
             json.dumps({"error": "Invalid userId in token"}),
