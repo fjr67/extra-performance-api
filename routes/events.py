@@ -7,6 +7,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from datetime import datetime
 import jwt
+from bson.json_util import dumps
 
 bp = func.Blueprint()
 
@@ -40,14 +41,14 @@ def decodeToken(token):
     )
     return decoded.get("userId")
 
-@bp.route(route="events", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="v1.0/events", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 #endpoint to test initial setup of MongoDB and deploy to azure. NOT USED IN PROD
 def get_events(req: func.HttpRequest) -> func.HttpResponse:
     db = get_db()
     events = list(db.Events.find({}, {"_id": 0}))
 
     return func.HttpResponse(
-        body=json.dumps(events),
+        body=dumps(events),
         mimetype="application/json",
         status_code=200
     )
@@ -128,8 +129,8 @@ def get_user_events(req: func.HttpRequest) -> func.HttpResponse:
         event['userId'] = str(event['userId'])
         if event['workoutLogId']:
             event['workoutLogId'] = str(event['workoutLogId'])
-        event['start'] = str(event['start'])
-        event['end'] = str(event['end'])
+        event['start'] = event['start'].isoformat()
+        event['end'] = event['end'].isoformat()
 
     #returning list of events
     return func.HttpResponse(
