@@ -488,3 +488,65 @@ def delete_event(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
             status_code=403
         )
+
+
+@bp.route(route="v1.0/userEvents/{id}", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+@jwt_required
+def get_one_event(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("getEvent called")
+
+    #connecting to MongoDB
+    db = get_db()
+    events = db.Events
+
+    #checking for id and making sure it is valid
+    id = req.route_params.get("id")
+    if not id:
+        return func.HttpResponse(
+            json.dumps({"error": "eventId missing"}),
+            mimetype="application/json",
+            status_code=400
+        )
+
+    try:
+        eventId = ObjectId(id)
+    except (InvalidId, TypeError):
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid eventId"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    #get token from request, set by decorator
+    token = getattr(req, "jwt_token", None)
+
+    #obtain userId from JWT
+    try:
+        user_id = ObjectId(decodeToken(token))
+    except (InvalidId, TypeError):
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid userId in token"}),
+            mimetype="application/json",
+            status_code=401
+        )
+    
+    event = events.find_one({'_id':eventId, 'userId': user_id})
+    if event is not None:
+        event['_id'] = str(event['_id'])
+        event['userId'] = str(event['userId'])
+        if event['workoutLogId']:
+            event['workoutLogId'] = str(event['workoutLogId'])
+        event['start'] = event['start'].isoformat()
+        event['end'] = event['end'].isoformat()
+
+        return func.HttpResponse(
+            body=json.dumps(event),
+            mimetype="application/json",
+            status_code=200
+        )
+    else:
+        return func.HttpResponse(
+            json.dumps({"error": "Event not found"}),
+            mimetype="application/json",
+            status_code=404
+        )
