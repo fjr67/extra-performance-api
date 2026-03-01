@@ -150,6 +150,7 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
     db = get_db()
     users = db.users
     events = db.Events
+    workoutLogs = db.workoutLogs
     
     #checking for valid JSON body in request
     try:
@@ -243,19 +244,7 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
         event_location = event_location.strip()
     else:
         event_location = None
-    event_workout_id = data.get("workoutLogId")
-    if checkString(event_workout_id):
-        #checking workoutLogId is valid oid
-        try:
-            event_workout_id = ObjectId(event_workout_id.strip())
-        except (InvalidId, TypeError):
-            return func.HttpResponse(
-                json.dumps({'error': 'workoutLogId is invalid'}),
-                mimetype="application/json",
-                status_code=400
-            )
-    else:
-        event_workout_id = None
+            
     
     #checking userId exists
     existing = users.find_one({"_id": event_userId})
@@ -275,13 +264,35 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
         'start': event_start,
         'end': event_end,
         'location': event_location,
-        'workoutLogId': event_workout_id
+        'workoutLogId': None
     }
 
-    #inserting new event in MongoDB
-    result = events.insert_one(new_event)
+    try: 
+        if event_type == eventTypes[1]:
+            workoutLog_response = workoutLogs.insert_one({
+                "userId": event_userId,
+                "eventId": None,
+                "date": event_start,
+                "notes": None,
+                "exercises": []
+            })
+            workoutLogId = workoutLog_response.inserted_id
+            new_event['workoutLogId'] = workoutLogId
 
-    #create link for new created event?
+        #inserting new event in MongoDB
+        result = events.insert_one(new_event)
+        eventId = result.inserted_id
+
+        if workoutLogId:
+            workoutLogs.update_one(
+                {"_id": workoutLogId},
+                {"$set": {"eventId": eventId}}
+            )
+        
+    except Exception as e:
+        if workoutLogId and eventId is None:
+            workoutLogs.delete_one({"_id": workoutLogId})
+
     #response with newly created event ID
     return func.HttpResponse(
             json.dumps({"message": "Event created", "id": str(result.inserted_id)}),
