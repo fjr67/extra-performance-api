@@ -309,6 +309,7 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
     #connecting to MongoDB
     db = get_db()
     events = db.Events
+    workoutLogs = db.workoutLogs
 
     #checking for id and making sure it is valid
     id = req.route_params.get("id")
@@ -421,11 +422,54 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
-    #updating mongoDB document with updated fields
-    result = events.update_one(
-        {"_id": eventId, "userId": user_id},
-        {"$set": edited_event}
-    )
+    existing_event = events.find_one({"_id": eventId, "userId": user_id})
+    if not existing_event:
+        return func.HttpResponse(
+            json.dumps({"error": "Forbidden or event not found"}),
+            mimetype="application/json",
+            status_code=403
+        )
+    
+    original_event_type = existing_event["eventType"]
+
+    if original_event_type == 'STANDARD' and edited_event.get("eventType") == 'WORKOUT':
+        workoutLogId = None
+        start = edited_event.get('start', existing_event.get('start'))
+        try:
+            workoutLog_response = workoutLogs.insert_one({
+                "userId": user_id,
+                "eventId": eventId,
+                "date": start,
+                "notes": None,
+                "exercises": []
+            })
+            workoutLogId = workoutLog_response.inserted_id
+            edited_event['workoutLogId'] = workoutLogId
+
+            #inserting new event in MongoDB
+            result = events.update_one(
+                {"_id": eventId, "userId": user_id},
+                {"$set": edited_event}
+            )
+
+            if result.matched_count != 1:
+                workoutLogs.delete_one({"_id": workoutLogId})
+                return func.HttpResponse(
+                    json.dumps({"error": "Forbidden or event not found"}),
+                    mimetype="application/json",
+                    status_code=403
+                )
+        except Exception as e:
+            if workoutLogId is not None:
+                workoutLogs.delete_one({"_id": workoutLogId})
+            raise
+
+    else:
+        #updating mongoDB document with updated fields
+        result = events.update_one(
+            {"_id": eventId, "userId": user_id},
+            {"$set": edited_event}
+        )
 
     if result.modified_count == 0:
         return func.HttpResponse(

@@ -250,6 +250,8 @@ def edit_workout(req: func.HttpRequest) -> func.HttpResponse:
         if existing is None:
             errors.append({f"exercises[{exercise_index}]": "exerciseId does not exist"})
             continue
+        else:
+            exerciseName = existing["name"]
 
         sets = exercise["sets"]
 
@@ -305,6 +307,7 @@ def edit_workout(req: func.HttpRequest) -> func.HttpResponse:
 
         validated_exercises.append({
             "exerciseId": exerciseId,
+            "name": exerciseName,
             "sets": validated_sets
         })
 
