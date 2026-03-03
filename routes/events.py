@@ -267,6 +267,9 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
         'workoutLogId': None
     }
 
+    eventId = None
+    workoutLogId = None
+
     try: 
         if event_type == eventTypes[1]:
             workoutLog_response = workoutLogs.insert_one({
@@ -290,7 +293,9 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
             )
         
     except Exception as e:
-        if workoutLogId and eventId is None:
+        logging.exception("create_event failed")
+
+        if workoutLogId is not None and eventId is None:
             workoutLogs.delete_one({"_id": workoutLogId})
 
     #response with newly created event ID
