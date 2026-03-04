@@ -140,6 +140,66 @@ def get_user_events(req: func.HttpRequest) -> func.HttpResponse:
     )
 
 
+@bp.route(route="v1.0/userEventsLimit", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+@jwt_required
+def get_user_events_limit(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("userEvents/limit called")
+
+    #connecting to MongoDB
+    db = get_db()
+
+    #getting userId from token and validating
+    token = getattr(req, "jwt_token", None)
+
+    try:
+        user_id = ObjectId(decodeToken(token))
+    except (InvalidId, TypeError):
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid userId in token"}),
+            mimetype="application/json",
+            status_code=401
+        )
+
+    if not user_id:
+        return func.HttpResponse(
+            json.dumps({'error': 'userId is missing'}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    after_str = req.params.get("after")
+    if after_str:
+        try:
+            after = datetime.fromisoformat(after_str.replace("Z", "+00:00"))
+        except ValueError:
+            return func.HttpResponse(
+                json.dumps({"error": "Invalid 'after' parameter"}),
+                mimetype="application/json",
+                status_code=400
+            )
+        
+    query = {"userId": user_id, "start": {"$gt": after}}
+    
+    #querying db for user events
+    events = list(db.Events.find(query).limit(5).sort("start", 1))
+
+    #converting non-string values to string for output
+    for event in events:
+        event['_id'] = str(event['_id'])
+        event['userId'] = str(event['userId'])
+        if event['workoutLogId']:
+            event['workoutLogId'] = str(event['workoutLogId'])
+        event['start'] = event['start'].isoformat()
+        event['end'] = event['end'].isoformat()
+
+    #returning list of events
+    return func.HttpResponse(
+        body=json.dumps(events),
+        mimetype="application/json",
+        status_code=200
+    )
+
+
 
 @bp.route(route="v1.0/createEvent", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 @jwt_required
@@ -275,6 +335,7 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
             workoutLog_response = workoutLogs.insert_one({
                 "userId": event_userId,
                 "eventId": None,
+                "title": event_title,
                 "date": event_start,
                 "notes": None,
                 "exercises": []
@@ -297,6 +358,12 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
 
         if workoutLogId is not None and eventId is None:
             workoutLogs.delete_one({"_id": workoutLogId})
+
+        return func.HttpResponse(
+            json.dumps({"error": "internal server error / logic error"}),
+            mimetype="application/json",
+            status_code=500
+        )
 
     #response with newly created event ID
     return func.HttpResponse(
