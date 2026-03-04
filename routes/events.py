@@ -367,10 +367,10 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
 
     #response with newly created event ID
     return func.HttpResponse(
-            json.dumps({"message": "Event created", "id": str(result.inserted_id)}),
-            mimetype="application/json",
-            status_code=201
-        )
+        json.dumps({"message": "Event created", "id": str(result.inserted_id)}),
+        mimetype="application/json",
+        status_code=201
+    )
 
 
 @bp.route(route="v1.0/editEvent/{id}", methods=["PATCH", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
