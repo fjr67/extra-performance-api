@@ -503,6 +503,10 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
         )
     
     original_event_type = existing_event["eventType"]
+    if edited_event.get("title"):
+        eventTitle = edited_event["title"]
+    else:
+        eventTitle = existing_event["title"]
 
     if original_event_type == 'STANDARD' and edited_event.get("eventType") == 'WORKOUT':
         workoutLogId = None
@@ -511,6 +515,7 @@ def edit_event(req: func.HttpRequest) -> func.HttpResponse:
             workoutLog_response = workoutLogs.insert_one({
                 "userId": user_id,
                 "eventId": eventId,
+                "title": eventTitle,
                 "date": start,
                 "notes": None,
                 "exercises": []
