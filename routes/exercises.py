@@ -8,6 +8,8 @@ from decorators import jwt_required
 
 bp = func.Blueprint()
 
+# exercises collection populated using WorkoutAPI
+
 @bp.route(route="v1.0/exercises", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 @jwt_required
 def get_exercises(req: func.HttpRequest) -> func.HttpResponse:

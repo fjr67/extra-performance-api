@@ -211,6 +211,27 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
     users = db.users
     events = db.Events
     workoutLogs = db.workoutLogs
+
+    #getting userId from token
+    token = getattr(req, "jwt_token", None)
+
+    try:
+        user_id = ObjectId(decodeToken(token))
+    except (InvalidId, TypeError):
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid userId in token"}),
+            mimetype="application/json",
+            status_code=401
+        )
+    
+    #checking userId exists
+    existing = users.find_one({"_id": event_userId})
+    if not existing:
+        return func.HttpResponse(
+            json.dumps({"error": "userId does not exist"}),
+            mimetype="application/json",
+            status_code=403
+        )
     
     #checking for valid JSON body in request
     try:
@@ -244,18 +265,6 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Missing data", "missing": missing}),
             mimetype="application/json",
             status_code=400
-        )
-    
-    #getting userId from token
-    token = getattr(req, "jwt_token", None)
-
-    try:
-        user_id = ObjectId(decodeToken(token))
-    except (InvalidId, TypeError):
-        return func.HttpResponse(
-            json.dumps({"error": "Invalid userId in token"}),
-            mimetype="application/json",
-            status_code=401
         )
     
     #validating required fields
@@ -304,16 +313,6 @@ def create_event(req: func.HttpRequest) -> func.HttpResponse:
         event_location = event_location.strip()
     else:
         event_location = None
-            
-    
-    #checking userId exists
-    existing = users.find_one({"_id": event_userId})
-    if not existing:
-        return func.HttpResponse(
-            json.dumps({"error": "userId does not exist"}),
-            mimetype="application/json",
-            status_code=403
-        )
     
     #creating new event object
     new_event = {
